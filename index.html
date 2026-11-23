@@ -21,15 +21,52 @@
   <pre id="result" aria-live="polite"></pre>
   <script type="module">
     const form = document.querySelector("form");
+    const message = document.querySelector("#message");
+    const submit = form.querySelector("button");
     const result = document.querySelector("#result");
+    const topics = new Map([
+      ["delivery", "Доставка"],
+      ["pricing", "Стоимость"],
+      ["other", "Другое"],
+    ]);
+    const invalidInput = "Введите текст заявки.";
+    const manualReview = "Не удалось подготовить черновик. Разберите заявку вручную.";
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const reply = await fetch("/api/triage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: document.querySelector("#message").value }),
-      });
-      result.textContent = JSON.stringify(await reply.json(), null, 2);
+      if (submit.disabled) return;
+
+      const text = message.value.trim();
+      if (!text) {
+        result.textContent = invalidInput;
+        message.focus();
+        return;
+      }
+
+      submit.disabled = true;
+      message.readOnly = true;
+      result.textContent = "Готовим черновик…";
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        const data = await reply.json();
+        if (reply.ok && data?.status === "ready" && topics.has(data.topic) &&
+            typeof data.draft === "string" && data.draft.trim()) {
+          result.textContent = `Тема: ${topics.get(data.topic)}\n\nЧерновик ответа:\n${data.draft}`;
+        } else if (reply.status === 400 && data?.status === "invalid_input") {
+          result.textContent = invalidInput;
+        } else {
+          result.textContent = manualReview;
+        }
+      } catch {
+        result.textContent = manualReview;
+      } finally {
+        submit.disabled = false;
+        message.readOnly = false;
+      }
     });
   </script>
 </body>
